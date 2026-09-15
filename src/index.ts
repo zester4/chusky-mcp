@@ -1,7 +1,7 @@
 import { createMcpHandler } from "agents/mcp/server";
 import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
-import { configuredApiOrigin, requestIdentity, type McpIdentity } from "./security.js";
+import { allowedApiPath, configuredApiOrigin, requestIdentity, type McpIdentity } from "./security.js";
 
 export type Env = Cloudflare.Env;
 type ApiFailure = Error & { status?: number; code?: string };
@@ -17,7 +17,7 @@ function apiError(status: number, code?: string): ApiFailure {
 async function chusky<T>(env: Env, identity: McpIdentity, path: string, init: RequestInit = {}): Promise<T> {
   const origin = configuredApiOrigin(env.CHUSKY_API_ORIGIN);
   if (!origin) throw new Error("Chusky API origin is not configured as a trusted HTTPS origin.");
-  if (!path.startsWith("/v1/") || path.startsWith("//") || path.includes("\\")) throw new Error("Invalid internal Chusky API path.");
+  if (!allowedApiPath(path)) throw new Error("Invalid internal Chusky API path.");
   const headers = new Headers(init.headers);
   headers.set("Authorization", `Bearer ${identity.apiKey}`);
   headers.set("X-Chusky-User-Id", identity.userId);

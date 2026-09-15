@@ -1,5 +1,9 @@
 export type McpIdentity = { apiKey: string; userId: string };
 
+export function allowedApiPath(path: string): boolean {
+  return path.startsWith("/v1/") && !path.startsWith("//") && !path.includes("\\");
+}
+
 export function configuredApiOrigin(value: string | undefined): string | undefined {
   if (!value) return undefined;
   try {

@@ -25,6 +25,24 @@ npm run dev
 
 Set `CHUSKY_API_ORIGIN` in a local `.dev.vars` file to the Chusky backend origin (for example `http://localhost:8080`). Never place a project key in Worker configuration or `.dev.vars`; the MCP client supplies it in `Authorization: Bearer …`.
 
+Run the deterministic live smoke check against the deployed Worker after setting
+an intentionally limited project key and a test identity. It discovers tools,
+asserts that the approval boundary is present, and calls the read-only template
+tool; it does not start a business run:
+
+```sh
+set CHUSKY_MCP_URL=https://chusky-mcp.adesrnd.workers.dev/mcp
+set CHUSKY_MCP_API_KEY=chsk_...
+set CHUSKY_MCP_USER_ID=staging-smoke
+npm run test:live
+```
+
+Keep this key restricted to `agents:read`. For a full staging release test, use
+a separate short-lived key and exercise `chusky_run_start`, duplicate the same
+idempotency key, verify the durable result, and confirm that a second identity
+cannot read the first identity's private run or Composio state. Those checks
+require a real Chusky staging backend with Redis, QStash, and Composio configured.
+
 ## Deploy
 
 The checked-in `wrangler.jsonc` points at the current Chusky API origin. Confirm the correct production URL, then deploy:

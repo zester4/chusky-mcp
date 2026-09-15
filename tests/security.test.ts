@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { configuredApiOrigin, requestIdentity } from "../src/security.js";
+import { allowedApiPath, configuredApiOrigin, requestIdentity } from "../src/security.js";
+
+test("MCP upstream paths are restricted to Chusky's versioned API", () => {
+  assert.equal(allowedApiPath("/v1/agents/templates"), true);
+  assert.equal(allowedApiPath("/v1/company/audit-events?after=1"), true);
+  assert.equal(allowedApiPath("/api/auth/session"), false);
+  assert.equal(allowedApiPath("//evil.example/v1"), false);
+  assert.equal(allowedApiPath("/v1\\evil"), false);
+});
 
 test("MCP upstream accepts only an HTTPS origin or loopback development origin", () => {
   assert.equal(configuredApiOrigin("https://chusky.example/"), "https://chusky.example");
