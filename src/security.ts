@@ -1,4 +1,4 @@
-export type McpIdentity = { apiKey: string; userId: string };
+export type McpIdentity = { apiKey: string; userId: string; scopes?: readonly string[] };
 
 export function allowedApiPath(path: string): boolean {
   return path.startsWith("/v1/") && !path.startsWith("//") && !path.includes("\\");
@@ -23,4 +23,17 @@ export function requestIdentity(request: Request): McpIdentity | undefined {
   const userId = (request.headers.get("x-chusky-user-id") ?? "").trim();
   if (!match || !userId || userId.length > 200 || /[\u0000-\u001f\u007f]/.test(userId)) return undefined;
   return { apiKey: match[1]!, userId };
+}
+
+export function hasMcpScope(identity: McpIdentity, scope: string): boolean {
+  if (identity.scopes === undefined || identity.scopes.includes(scope)) return true;
+  if (scope === "mcp:read") return identity.scopes.includes("mcp:run") || identity.scopes.includes("mcp:manage") || identity.scopes.includes("mcp:company");
+  if (scope === "mcp:run") return identity.scopes.includes("mcp:manage");
+  return false;
+}
+
+export function requireMcpScope(identity: McpIdentity, scope: string): void {
+  if (!hasMcpScope(identity, scope)) {
+    throw new Error(`This MCP authorization requires the '${scope}' scope.`);
+  }
 }

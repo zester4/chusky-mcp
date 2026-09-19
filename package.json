@@ -1,6 +1,6 @@
 {
   "name": "@chusky/mcp-server",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,6 +11,7 @@
     "test:live": "node tests/live-smoke.mjs"
   },
   "dependencies": {
+    "@cloudflare/workers-oauth-provider": "^0.10.3",
     "@modelcontextprotocol/server": "2.0.0",
     "agents": "^0.23.0",
     "zod": "^4.0.0"

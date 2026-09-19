@@ -42,7 +42,7 @@ const initialized = await rpc("initialize", {
 if (!initialized?.serverInfo?.name) throw new Error("MCP initialize response did not contain serverInfo");
 const tools = await rpc("tools/list", {});
 const names = new Set((tools?.tools || []).map((tool) => tool.name));
-for (const expected of ["chusky_agent_templates", "chusky_run_start", "chusky_run_get", "chusky_company_usage_get"]) {
+for (const expected of ["chusky_agent_templates", "chusky_run_start", "chusky_run_get", "chusky_tools_list", "chusky_artifacts_list", "chusky_company_usage_get"]) {
   if (!names.has(expected)) throw new Error(`MCP tool missing: ${expected}`);
 }
 for (const forbidden of ["chusky_approval_approve", "chusky_approval_deny"]) {
