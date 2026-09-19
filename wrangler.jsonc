@@ -6,9 +6,7 @@
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "workers_dev": true,
   "observability": { "enabled": true, "head_sampling_rate": 0.2 },
-  // OAuth requires an account-specific KV namespace. Add the returned ID from
-  // `wrangler kv namespace create CHUSKY_MCP_OAUTH` before deploying OAuth.
-  // "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "<namespace-id>" }],
+  "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "1b01409419fd47c7bb6876dea258346b" }],
   "vars": {
     "CHUSKY_API_ORIGIN": "https://chusky.up.railway.app"
   }
