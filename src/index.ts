@@ -36,7 +36,10 @@ async function chusky<T>(env: Env, identity: McpIdentity, path: string, init: Re
   const timeout = setTimeout(() => controller.abort("Chusky API request timed out"), MCP_MAX_UPSTREAM_MS);
   let response: Response;
   try {
-    response = await fetch(new URL(path, origin), { ...init, headers, redirect: "error", signal: controller.signal });
+    // Cloudflare Workers only supports `follow` and `manual` for fetch redirects.
+    // Keep redirects blocked so an upstream cannot move this adapter outside the
+    // trusted Chusky API origin; a manual 3xx is handled as an API failure below.
+    response = await fetch(new URL(path, origin), { ...init, headers, redirect: "manual", signal: controller.signal });
   } catch (error) {
     if (controller.signal.aborted) throw new Error("Chusky API request timed out.");
     throw error;
