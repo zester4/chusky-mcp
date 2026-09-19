@@ -85,11 +85,72 @@ function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character] ?? character));
 }
 
+const oauthCss = `
+  :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #172033; background: #f4f6fa; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-width: 320px; min-height: 100vh; background: #f4f6fa; color: #172033; }
+  .page { width: min(1040px, calc(100% - 32px)); margin: 0 auto; padding: 28px 0 48px; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 28px; }
+  .brand { display: inline-flex; align-items: center; gap: 10px; color: #172033; font-size: 18px; font-weight: 750; letter-spacing: -.03em; }
+  .brand-mark { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; background: #172033; color: #fff; font-size: 14px; font-weight: 800; letter-spacing: -.05em; }
+  .trust-label { display: inline-flex; align-items: center; gap: 7px; color: #526078; font-size: 12px; font-weight: 650; }
+  .trust-dot { width: 7px; height: 7px; border-radius: 50%; background: #1f9d68; box-shadow: 0 0 0 3px #d9f5e8; }
+  .card { display: grid; grid-template-columns: minmax(0, .88fr) minmax(0, 1.12fr); overflow: hidden; border: 1px solid #dce2eb; border-radius: 24px; background: #fff; box-shadow: 0 24px 70px rgba(31, 45, 71, .11), 0 3px 12px rgba(31, 45, 71, .04); }
+  .intro { padding: 54px 48px; background: #f8fafc; border-right: 1px solid #e7ebf1; }
+  .eyebrow { margin: 0 0 16px; color: #5b6a83; font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+  h1 { max-width: 390px; margin: 0; color: #172033; font-size: clamp(30px, 4vw, 44px); line-height: 1.04; letter-spacing: -.055em; }
+  .intro-copy { max-width: 390px; margin: 18px 0 30px; color: #5b6a83; font-size: 15px; line-height: 1.65; }
+  .requester { display: flex; align-items: center; gap: 13px; padding: 14px; border: 1px solid #e0e6ef; border-radius: 14px; background: #fff; }
+  .requester-mark { display: grid; flex: 0 0 auto; place-items: center; width: 38px; height: 38px; border-radius: 11px; background: #e9eef8; color: #31538f; font-size: 16px; font-weight: 800; }
+  .requester-label { margin: 0 0 3px; color: #7b879b; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+  .requester-name { margin: 0; overflow: hidden; color: #172033; font-size: 14px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+  .permission-heading { margin: 34px 0 12px; color: #172033; font-size: 13px; font-weight: 750; }
+  .permissions { display: grid; gap: 10px; margin: 0; padding: 0; color: #526078; font-size: 13px; line-height: 1.45; list-style: none; }
+  .permissions li { padding-left: 18px; position: relative; }
+  .permissions li::before { content: ""; position: absolute; left: 1px; top: .55em; width: 7px; height: 7px; border-radius: 50%; background: #31538f; }
+  .form-panel { padding: 54px 52px 48px; }
+  .form-header { margin-bottom: 28px; }
+  .form-header h2 { margin: 0 0 8px; color: #172033; font-size: 22px; letter-spacing: -.03em; }
+  .form-header p { max-width: 520px; margin: 0; color: #65738a; font-size: 14px; line-height: 1.6; }
+  .field { margin-top: 21px; }
+  label { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 8px; color: #26344d; font-size: 13px; font-weight: 750; }
+  .label-hint { color: #8893a5; font-size: 11px; font-weight: 600; }
+  input { display: block; width: 100%; height: 48px; padding: 0 14px; border: 1px solid #cbd4e1; border-radius: 10px; outline: none; background: #fff; color: #172033; font: inherit; font-size: 14px; transition: border-color .16s ease, box-shadow .16s ease; }
+  input::placeholder { color: #a6afbd; }
+  input:hover { border-color: #aab7c9; }
+  input:focus { border-color: #31538f; box-shadow: 0 0 0 4px rgba(49, 83, 143, .14); }
+  .field-help { margin: 8px 0 0; color: #758198; font-size: 12px; line-height: 1.5; }
+  .security-note { display: flex; gap: 11px; margin-top: 26px; padding: 13px 14px; border: 1px solid #dce8f7; border-radius: 12px; background: #f5f9ff; color: #526078; font-size: 12px; line-height: 1.55; }
+  .security-note strong { display: block; margin-bottom: 2px; color: #26344d; font-size: 12px; }
+  .security-icon { flex: 0 0 auto; width: 18px; height: 18px; margin-top: 1px; border: 2px solid #31538f; border-radius: 50%; }
+  .actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 30px; }
+  .button { min-height: 45px; padding: 0 18px; border: 1px solid transparent; border-radius: 10px; font: inherit; font-size: 13px; font-weight: 750; cursor: pointer; }
+  .button-primary { background: #172033; color: #fff; box-shadow: 0 5px 12px rgba(23, 32, 51, .16); }
+  .button-primary:hover { background: #25324b; }
+  .button-primary:focus-visible { outline: 3px solid rgba(49, 83, 143, .28); outline-offset: 2px; }
+  .footer { margin-top: 18px; color: #8994a6; font-size: 11px; line-height: 1.5; text-align: center; }
+  .error-card { max-width: 660px; margin: 64px auto 0; padding: 42px; border: 1px solid #eadfe1; border-radius: 20px; background: #fff; box-shadow: 0 18px 48px rgba(31, 45, 71, .08); }
+  .error-card h1 { font-size: 30px; }
+  .error-card p { color: #65738a; font-size: 14px; line-height: 1.65; }
+  .error-message { margin: 22px 0; padding: 14px 16px; border: 1px solid #f0d8d8; border-radius: 10px; background: #fff7f7; color: #923f46 !important; font-size: 13px !important; }
+  @media (max-width: 760px) { .page { width: min(100% - 20px, 560px); padding-top: 18px; } .topbar { margin-bottom: 18px; } .card { display: block; border-radius: 18px; } .intro { padding: 30px 24px; border-right: 0; border-bottom: 1px solid #e7ebf1; } .form-panel { padding: 30px 24px 28px; } h1 { font-size: 34px; } .permission-heading { margin-top: 26px; } .error-card { margin-top: 28px; padding: 28px 22px; } }
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; } }
+`;
+
+const oauthHeaders = {
+  "Content-Type": "text/html; charset=utf-8",
+  "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'",
+  "X-Content-Type-Options": "nosniff",
+  "Referrer-Policy": "no-referrer",
+};
+
+function oauthShell(content: string, title: string): string {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><style>${oauthCss}</style></head><body><div class="page"><header class="topbar"><div class="brand"><span class="brand-mark" aria-hidden="true">C</span><span>Chusky</span></div><div class="trust-label"><span class="trust-dot" aria-hidden="true"></span>Secure connection</div></header>${content}</div></body></html>`;
+}
+
 function oauthErrorResponse(message: string, status = 400): Response {
-  return new Response(`<main><h1>Chusky authorization</h1><p>${escapeHtml(message)}</p><p>Close this window and retry from your MCP client.</p></main>`, {
-    status,
-    headers: { "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'", "X-Content-Type-Options": "nosniff" },
-  });
+  const content = `<main class="error-card"><p class="eyebrow">Connection interrupted</p><h1>We couldn't connect Chusky</h1><p class="error-message">${escapeHtml(message)}</p><p>Close this window and retry from your MCP client. If the problem continues, ask your workspace administrator to verify the project key and connection settings.</p></main>`;
+  return new Response(oauthShell(content, "Chusky connection error"), { status, headers: oauthHeaders });
 }
 
 function authQuery(request: Request, form?: FormData): URL {
@@ -115,9 +176,20 @@ async function renderAuthorize(request: Request, env: Env): Promise<Response> {
   const fields = ["response_type", "client_id", "redirect_uri", "scope", "state", "code_challenge", "code_challenge_method", "resource"]
     .map((name) => hidden(name, new URL(request.url).searchParams.get(name) ?? ""))
     .join("");
-  return new Response(`<!doctype html><meta charset="utf-8"><title>Connect Chusky</title><style>body{font:16px system-ui;max-width:38rem;margin:4rem auto;padding:0 1rem}label{display:block;margin:1rem 0 .35rem}input{box-sizing:border-box;width:100%;padding:.7rem}button{margin-top:1.2rem;padding:.7rem 1rem}small{color:#555}</style><main><h1>Connect Chusky</h1><p><strong>${escapeHtml(client.clientName || "An MCP client")}</strong> is requesting access to Chusky.</p><p>Enter a project-scoped Chusky key and a stable identity. The key is stored only inside the encrypted OAuth grant.</p><form method="post" action="/authorize">${fields}<label for="key">Chusky project API key</label><input id="key" name="chusky_api_key" type="password" autocomplete="off" required pattern="chsk_[A-Za-z0-9_-]{16,500}"><label for="user">Stable Chusky identity</label><input id="user" name="chusky_user_id" required maxlength="200" pattern="[A-Za-z0-9._:@/-]+"><small>Use a non-PII service or customer identity. Do not use the root operator key.</small><button type="submit">Allow Chusky access</button></form></main>`, {
-    headers: { "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer" },
-  });
+  const clientName = client.clientName || "Your MCP client";
+  const requestedScopes = oauthRequest.scope.length ? oauthRequest.scope : ["mcp:read"];
+  const scopeLabels: Record<string, string> = {
+    "mcp:read": "Read your Chusky agent profiles, runs, and results",
+    "mcp:run": "Start and monitor durable agent work",
+    "mcp:manage": "Manage agent profiles, triggers, and webhooks",
+    "mcp:company": "View bounded company-level usage and run status",
+  };
+  const permissionMarkup = requestedScopes
+    .map((scopeName) => `<li>${escapeHtml(scopeLabels[scopeName] ?? scopeName)}</li>`)
+    .join("");
+  const requesterInitial = escapeHtml(clientName.trim().charAt(0).toUpperCase() || "A");
+  const content = `<main class="card"><section class="intro"><p class="eyebrow">Authorization request</p><h1>Give your agent a governed way to work.</h1><p class="intro-copy">Chusky connects your MCP client to durable agents, business tools, and approved workflows—while keeping your workspace policy in control.</p><div class="requester"><div class="requester-mark" aria-hidden="true">${requesterInitial}</div><div><p class="requester-label">Requesting application</p><p class="requester-name">${escapeHtml(clientName)}</p></div></div><p class="permission-heading">This connection can</p><ul class="permissions">${permissionMarkup}</ul></section><section class="form-panel"><div class="form-header"><h2>Connect to Chusky</h2><p>Confirm the project and identity this agent should use. Your key is verified against Chusky and stored only inside the encrypted OAuth grant.</p></div><form method="post" action="/authorize">${fields}<div class="field"><label for="key">Project API key <span class="label-hint">starts with chsk_</span></label><input id="key" name="chusky_api_key" type="password" autocomplete="off" placeholder="Enter your project-scoped key" required pattern="chsk_[A-Za-z0-9_-]{16,500}" aria-describedby="key-help"><p id="key-help" class="field-help">Use a project key with only the scopes this agent needs. Never use the root operator key.</p></div><div class="field"><label for="user">Workspace identity <span class="label-hint">non-PII</span></label><input id="user" name="chusky_user_id" autocomplete="organization" placeholder="e.g. acme-production" required maxlength="200" pattern="[A-Za-z0-9._:@/-]+" aria-describedby="user-help"><p id="user-help" class="field-help">Use a stable service, workspace, or customer identity. The same identity keeps runs and connected apps properly isolated.</p></div><div class="security-note"><span class="security-icon" aria-hidden="true"></span><div><strong>Your access stays scoped</strong> Chusky applies project permissions, budgets, approvals, and identity isolation to every request. External actions can still require human approval.</div></div><div class="actions"><button class="button button-primary" type="submit">Allow access</button></div></form><p class="footer">You can revoke this connection from your MCP client or Chusky workspace settings.</p></section></main>`;
+  return new Response(oauthShell(content, `Connect ${clientName} to Chusky`), { headers: oauthHeaders });
 }
 
 async function authorize(request: Request, env: Env): Promise<Response> {
