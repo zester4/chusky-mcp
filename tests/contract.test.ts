@@ -10,5 +10,7 @@ test("MCP keeps the approval boundary and response limits explicit", async () =>
   assert.match(source, /raw\.length <= 24_000/);
   assert.match(source, /redirect:\s*["']manual["']/);
   assert.doesNotMatch(source, /redirect:\s*["']error["']/);
+  assert.match(source, /oauthCompletionResponse/);
+  assert.match(source, /http-equiv="refresh"/);
   assert.doesNotMatch(source, /approvals\/[^"`]*\/(approve|deny)/);
 });

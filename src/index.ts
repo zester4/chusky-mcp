@@ -136,6 +136,12 @@ const oauthCss = `
   .error-card h1 { font-size: 34px; }
   .error-card p { color: var(--muted); font-size: 14px; line-height: 1.65; }
   .error-message { margin: 22px 0; padding: 14px 16px; border: 1px solid color-mix(in srgb, #b42318 20%, var(--border)); border-radius: 10px; background: color-mix(in srgb, #b42318 5%, var(--card)); color: #923f46 !important; font-size: 13px !important; }
+  .success-card { max-width: 660px; margin: 64px auto 0; padding: 42px; border: 1px solid color-mix(in srgb, var(--amber) 34%, var(--border)); border-radius: 20px; background: var(--card); box-shadow: 0 18px 48px rgba(31, 28, 22, .08); }
+  .success-card h1 { font-size: 34px; }
+  .success-card p { color: var(--muted); font-size: 14px; line-height: 1.65; }
+  .success-badge { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 18px; color: var(--foreground); font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
+  .success-badge::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--amber); }
+  .continue-link { display: inline-flex; align-items: center; min-height: 44px; margin-top: 12px; padding: 0 16px; border-radius: 8px; background: var(--foreground); color: var(--background); font-size: 13px; font-weight: 650; text-decoration: none; }
   @media (max-width: 760px) { .page { width: min(100% - 20px, 560px); padding-top: 18px; } .topbar { margin-bottom: 18px; } .card { display: block; border-radius: 18px; } .intro { padding: 30px 24px; border-right: 0; border-bottom: 1px solid #e7ebf1; } .form-panel { padding: 30px 24px 28px; } h1 { font-size: 34px; } .permission-heading { margin-top: 26px; } .error-card { margin-top: 28px; padding: 28px 22px; } }
   @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; } }
 `;
@@ -154,6 +160,12 @@ function oauthShell(content: string, title: string): string {
 function oauthErrorResponse(message: string, status = 400): Response {
   const content = `<main class="error-card"><p class="eyebrow">Connection interrupted</p><h1>We couldn't connect Chusky</h1><p class="error-message">${escapeHtml(message)}</p><p>Close this window and retry from your MCP client. If the problem continues, ask your workspace administrator to verify the project key and connection settings.</p></main>`;
   return new Response(oauthShell(content, "Chusky connection error"), { status, headers: oauthHeaders });
+}
+
+function oauthCompletionResponse(redirectTo: string): Response {
+  const safeRedirect = escapeHtml(redirectTo);
+  const content = `<main class="success-card"><div class="success-badge">Access approved</div><h1>You're connected.</h1><p>Chusky has approved this MCP connection. We’re returning you to your MCP client now.</p><p>If the window does not continue automatically, use the button below.</p><a class="continue-link" href="${safeRedirect}">Continue to your MCP client</a><meta http-equiv="refresh" content="0;url=${safeRedirect}"></main>`;
+  return new Response(oauthShell(content, "Chusky connection approved"), { headers: { ...oauthHeaders, "Cache-Control": "no-store" } });
 }
 
 function authQuery(request: Request, form?: FormData): URL {
@@ -222,7 +234,7 @@ async function authorize(request: Request, env: Env): Promise<Response> {
     scope: requested,
     props: { apiKey: identity.apiKey, userId: identity.userId, scopes: requested },
   });
-  return Response.redirect(redirectTo, 302);
+  return oauthCompletionResponse(redirectTo);
 }
 
 function createServer(env: Env, identity: McpIdentity): McpServer {
