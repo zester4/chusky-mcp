@@ -13,7 +13,7 @@ type OAuthProps = { apiKey: string; userId: string; scopes: string[] };
 
 const OAUTH_SCOPES = ["mcp:read", "mcp:run", "mcp:manage", "mcp:company"] as const;
 const MCP_MAX_UPSTREAM_MS = 25_000;
-const MCP_VERSION = "0.2.0";
+const MCP_VERSION = "0.3.0";
 
 function apiError(status: number, code?: string): ApiFailure {
   const known = code && /^[a-z0-9_]{1,80}$/i.test(code) ? code : "request_failed";
@@ -241,7 +241,7 @@ function createServer(env: Env, identity: McpIdentity): McpServer {
   const server = new McpServer({ name: "chusky", version: MCP_VERSION });
   const writeTools = new Set([
     "chusky_composio_connect_app", "chusky_agent_create", "chusky_agent_update", "chusky_agent_delete", "chusky_run_start", "chusky_run_cancel",
-    "chusky_run_resume", "chusky_task_cancel", "chusky_task_retry", "chusky_thread_update", "chusky_trigger_create",
+    "chusky_run_resume", "chusky_task_cancel", "chusky_task_retry", "chusky_mission_start", "chusky_mission_pause", "chusky_mission_resume", "chusky_mission_cancel", "chusky_mission_event", "chusky_mission_step_complete", "chusky_mission_replan", "chusky_thread_update", "chusky_trigger_create",
     "chusky_trigger_update", "chusky_trigger_delete", "chusky_webhook_create", "chusky_webhook_update",
     "chusky_webhook_delete", "chusky_webhook_delivery_retry",
   ]);
@@ -457,6 +457,89 @@ function createServer(env: Env, identity: McpIdentity): McpServer {
     inputSchema: { taskId: z.string().min(1).max(200) },
   }, async ({ taskId }) => {
     try { scope(identity, "mcp:run"); return result(await chusky(env, identity, `/v1/tasks/${encodeURIComponent(taskId)}/retry`, { method: "POST", body: "{}" })); }
+    catch (error) { return failure(error); }
+  });
+
+  server.registerTool("chusky_missions_list", {
+    title: "List autonomous Chusky missions",
+    description: "List bounded autonomous missions for this Chusky identity, including honest lifecycle state, checkpoints, next actions, and budget consumption.",
+    inputSchema: {},
+  }, async () => {
+    try { return result(await chusky(env, identity, "/v1/missions")); }
+    catch (error) { return failure(error); }
+  });
+
+  server.registerTool("chusky_mission_get", {
+    title: "Get autonomous mission status",
+    description: "Read one mission's durable checkpoint, next action, budget, and bounded event history.",
+    inputSchema: { missionId: z.string().min(1).max(200) },
+  }, async ({ missionId }) => {
+    try { return result(await chusky(env, identity, `/v1/missions/${encodeURIComponent(missionId)}`)); }
+    catch (error) { return failure(error); }
+  });
+
+  server.registerTool("chusky_mission_start", {
+    title: "Start an autonomous Chusky mission",
+    description: "Start durable, bounded multi-step work that continues across model turns and service restarts. Provide a verifiable definition of done and explicit limits; external actions still follow Chusky policy and approval.",
+    inputSchema: {
+      title: z.string().min(1).max(240),
+      objective: z.string().min(1).max(8000),
+      definitionOfDone: z.string().min(1).max(4000),
+      maxDurationSeconds: z.number().int().min(60).max(2_592_000).optional(),
+      maxSteps: z.number().int().min(1).max(1000).optional(),
+      maxToolCalls: z.number().int().min(1).max(10_000).optional(),
+      maxCost: z.number().min(0).max(10_000).optional(),
+      steps: z.array(z.object({ id: z.string().max(160).optional(), title: z.string().min(1).max(240), objective: z.string().min(1).max(4000), dependsOn: z.array(z.string().max(160)).max(20).optional(), retryLimit: z.number().int().min(0).max(20).optional() })).max(100).optional(),
+      idempotencyKey: z.string().min(8).max(200),
+    },
+  }, async ({ title, objective, definitionOfDone, maxDurationSeconds, maxSteps, maxToolCalls, maxCost, steps, idempotencyKey }) => {
+    try {
+      scope(identity, "mcp:run");
+      return result(await chusky(env, identity, "/v1/missions", {
+        method: "POST",
+        headers: { "Idempotency-Key": key(idempotencyKey, "mission") },
+        body: jsonBody({ title, objective, definitionOfDone, maxDurationSeconds, maxSteps, maxToolCalls, maxCost, steps }),
+      }));
+    } catch (error) { return failure(error); }
+  });
+
+  for (const action of ["pause", "resume", "cancel"] as const) {
+    const toolName = `chusky_mission_${action}`;
+    server.registerTool(toolName, {
+      title: `${action[0].toUpperCase()}${action.slice(1)} an autonomous mission`,
+      description: `${action[0].toUpperCase()}${action.slice(1)} an owned autonomous mission without losing its durable checkpoint.`,
+      inputSchema: { missionId: z.string().min(1).max(200) },
+    }, async ({ missionId }: { missionId: string }) => {
+      try { scope(identity, "mcp:run"); return result(await chusky(env, identity, `/v1/missions/${encodeURIComponent(missionId)}/${action}`, { method: "POST", body: "{}" })); }
+      catch (error) { return failure(error); }
+    });
+  }
+
+  server.registerTool("chusky_mission_event", {
+    title: "Resume a mission from a provider event",
+    description: "Resume exactly one mission waiting for the matching provider and stable provider event id. Duplicate delivery is harmless.",
+    inputSchema: { missionId: z.string().min(1).max(200), provider: z.string().min(1).max(120), providerEventId: z.string().min(1).max(240) },
+  }, async ({ missionId, provider, providerEventId }) => {
+    try { scope(identity, "mcp:run"); return result(await chusky(env, identity, `/v1/missions/${encodeURIComponent(missionId)}/events`, { method: "POST", body: jsonBody({ provider, providerEventId }) })); }
+    catch (error) { return failure(error); }
+  });
+
+  const missionStepSchema = z.object({ id: z.string().max(160).optional(), title: z.string().min(1).max(240), objective: z.string().min(1).max(4000), dependsOn: z.array(z.string().max(160)).max(20).optional(), retryLimit: z.number().int().min(0).max(20).optional() });
+  server.registerTool("chusky_mission_step_complete", {
+    title: "Complete a Chusky mission step",
+    description: "Record a verified result for one mission step and advance to the next dependency-ready step.",
+    inputSchema: { missionId: z.string().min(1).max(200), stepId: z.string().min(1).max(160), result: z.string().min(1).max(12000) },
+  }, async ({ missionId, stepId, result: stepResult }) => {
+    try { scope(identity, "mcp:run"); return result(await chusky(env, identity, `/v1/missions/${encodeURIComponent(missionId)}/steps/${encodeURIComponent(stepId)}/complete`, { method: "POST", body: jsonBody({ result: stepResult }) })); }
+    catch (error) { return failure(error); }
+  });
+
+  server.registerTool("chusky_mission_replan", {
+    title: "Replan a Chusky mission",
+    description: "Replace the unfinished mission plan after verified information changes. Completed steps remain protected and dependencies are validated.",
+    inputSchema: { missionId: z.string().min(1).max(200), reason: z.string().min(1).max(2000), steps: z.array(missionStepSchema).min(1).max(100) },
+  }, async ({ missionId, reason, steps }) => {
+    try { scope(identity, "mcp:run"); return result(await chusky(env, identity, `/v1/missions/${encodeURIComponent(missionId)}/replan`, { method: "POST", body: jsonBody({ reason, steps }) })); }
     catch (error) { return failure(error); }
   });
 

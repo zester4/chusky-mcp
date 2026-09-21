@@ -4,6 +4,7 @@ import test from "node:test";
 
 test("MCP public contract keeps OAuth, identity, limits, and curated tools wired", async () => {
   const source = await readFile(new URL("../src/index.ts", import.meta.url), "utf8");
+  const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
   for (const contract of [
     "OAuthProvider", "clientRegistrationEndpoint", "allowPlainPKCE: false", "refreshTokenTTL",
     "mcp:read", "mcp:run", "mcp:manage", "mcp:company", "structuredContent", "MCP_MAX_UPSTREAM_MS",
@@ -15,4 +16,10 @@ test("MCP public contract keeps OAuth, identity, limits, and curated tools wired
   assert.match(source, /legacy: "stateless"/);
   assert.match(source, /onerror:/);
   assert.doesNotMatch(source, /chusky_approval_(approve|deny)/);
+
+  const registeredTools = [...source.matchAll(/registerTool\("([^"]+)"/g)].map((match) => match[1]);
+  assert.equal(registeredTools.length, 49, "the public catalog should remain intentionally curated");
+  for (const toolName of registeredTools) {
+    assert.match(readme, new RegExp(`\\b${toolName}\\b`), `README is missing ${toolName}`);
+  }
 });
