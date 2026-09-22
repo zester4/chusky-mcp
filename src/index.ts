@@ -244,6 +244,7 @@ function createServer(env: Env, identity: McpIdentity): McpServer {
     "chusky_run_resume", "chusky_task_cancel", "chusky_task_retry", "chusky_mission_start", "chusky_mission_pause", "chusky_mission_resume", "chusky_mission_cancel", "chusky_mission_event", "chusky_mission_step_complete", "chusky_mission_replan", "chusky_thread_update", "chusky_trigger_create",
     "chusky_trigger_update", "chusky_trigger_delete", "chusky_webhook_create", "chusky_webhook_update",
     "chusky_webhook_delete", "chusky_webhook_delivery_retry",
+    "chusky_mission_evidence", "chusky_mission_verify", "chusky_mission_repair", "chusky_context_save",
   ]);
   const registerTool = server.registerTool.bind(server) as (...args: any[]) => unknown;
   (server as unknown as { registerTool: typeof server.registerTool }).registerTool = ((name: string, options: Record<string, unknown>, callback: (...args: any[]) => unknown) => registerTool(name, {
@@ -253,6 +254,25 @@ function createServer(env: Env, identity: McpIdentity): McpServer {
       ? { readOnlyHint: false, destructiveHint: /cancel|delete|disconnect/.test(name), idempotentHint: /cancel|update|delete/.test(name), openWorldHint: true }
       : { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, callback)) as typeof server.registerTool;
+
+  // MCP resources give clients a stable read surface for planning context;
+  // they are resolved through the same owner-scoped Chusky API as tools.
+  server.registerResource("chusky_outcome_catalog", "chusky://outcomes/catalog", {
+    title: "Chusky outcome package catalog",
+    description: "Department-specific, evidence-backed outcome packages with tools, budgets, approvals, and success criteria.",
+    mimeType: "application/json",
+  }, async (uri) => {
+    try { scope(identity, "mcp:read"); const data = await chusky(env, identity, "/v1/outcomes"); return { contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify(data) }] }; }
+    catch (error) { throw error instanceof Error ? error : new Error("Outcome catalog unavailable."); }
+  });
+  server.registerResource("chusky_mission_overview", "chusky://missions/overview", {
+    title: "Chusky mission overview",
+    description: "Owner-scoped durable missions, status, checkpoints, next actions, budgets, and evidence state.",
+    mimeType: "application/json",
+  }, async (uri) => {
+    try { scope(identity, "mcp:read"); const data = await chusky(env, identity, "/v1/missions"); return { contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify(data) }] }; }
+    catch (error) { throw error instanceof Error ? error : new Error("Mission overview unavailable."); }
+  });
 
   server.registerTool("chusky_agent_templates", {
     title: "List Chusky agent templates",
@@ -478,6 +498,24 @@ function createServer(env: Env, identity: McpIdentity): McpServer {
     catch (error) { return failure(error); }
   });
 
+  server.registerTool("chusky_mission_proof", {
+    title: "Get mission proof",
+    description: "Read a bounded proof record with definition of done, step results, evidence, verification, budget, and recent lifecycle events.",
+    inputSchema: { missionId: z.string().min(1).max(200) },
+  }, async ({ missionId }) => {
+    try { scope(identity, "mcp:read"); return result(await chusky(env, identity, `/v1/missions/${encodeURIComponent(missionId)}/proof`)); }
+    catch (error) { return failure(error); }
+  });
+
+  server.registerTool("chusky_mission_events", {
+    title: "Get mission event history",
+    description: "Read the durable event history for one owned mission without exposing hidden prompts or provider secrets.",
+    inputSchema: { missionId: z.string().min(1).max(200) },
+  }, async ({ missionId }) => {
+    try { scope(identity, "mcp:read"); return result(await chusky(env, identity, `/v1/missions/${encodeURIComponent(missionId)}/events`)); }
+    catch (error) { return failure(error); }
+  });
+
   server.registerTool("chusky_mission_start", {
     title: "Start an autonomous Chusky mission",
     description: "Start durable, bounded multi-step work that continues across model turns and service restarts. Provide a verifiable definition of done and explicit limits; external actions still follow Chusky policy and approval.",
@@ -485,20 +523,22 @@ function createServer(env: Env, identity: McpIdentity): McpServer {
       title: z.string().min(1).max(240),
       objective: z.string().min(1).max(8000),
       definitionOfDone: z.string().min(1).max(4000),
+      requiredEvidence: z.array(z.string().min(1).max(500)).max(50).optional(),
+      verificationMode: z.enum(["legacy", "strict"]).optional(),
       maxDurationSeconds: z.number().int().min(60).max(2_592_000).optional(),
       maxSteps: z.number().int().min(1).max(1000).optional(),
       maxToolCalls: z.number().int().min(1).max(10_000).optional(),
       maxCost: z.number().min(0).max(10_000).optional(),
-      steps: z.array(z.object({ id: z.string().max(160).optional(), title: z.string().min(1).max(240), objective: z.string().min(1).max(4000), dependsOn: z.array(z.string().max(160)).max(20).optional(), retryLimit: z.number().int().min(0).max(20).optional() })).max(100).optional(),
+      steps: z.array(z.object({ id: z.string().max(160).optional(), title: z.string().min(1).max(240), objective: z.string().min(1).max(4000), dependsOn: z.array(z.string().max(160)).max(20).optional(), retryLimit: z.number().int().min(0).max(20).optional(), input: z.record(z.string(), z.unknown()).optional(), outputSchema: z.record(z.string(), z.unknown()).optional(), evidenceRequired: z.array(z.string().max(500)).max(20).optional(), compensationObjective: z.string().max(4000).optional(), retryBackoffSeconds: z.number().int().min(0).max(86400).optional(), parallelGroup: z.string().max(120).optional() })).max(100).optional(),
       idempotencyKey: z.string().min(8).max(200),
     },
-  }, async ({ title, objective, definitionOfDone, maxDurationSeconds, maxSteps, maxToolCalls, maxCost, steps, idempotencyKey }) => {
+  }, async ({ title, objective, definitionOfDone, requiredEvidence, verificationMode, maxDurationSeconds, maxSteps, maxToolCalls, maxCost, steps, idempotencyKey }) => {
     try {
       scope(identity, "mcp:run");
       return result(await chusky(env, identity, "/v1/missions", {
         method: "POST",
         headers: { "Idempotency-Key": key(idempotencyKey, "mission") },
-        body: jsonBody({ title, objective, definitionOfDone, maxDurationSeconds, maxSteps, maxToolCalls, maxCost, steps }),
+        body: jsonBody({ title, objective, definitionOfDone, requiredEvidence, verificationMode, maxDurationSeconds, maxSteps, maxToolCalls, maxCost, steps }),
       }));
     } catch (error) { return failure(error); }
   });
@@ -542,6 +582,57 @@ function createServer(env: Env, identity: McpIdentity): McpServer {
     try { scope(identity, "mcp:run"); return result(await chusky(env, identity, `/v1/missions/${encodeURIComponent(missionId)}/replan`, { method: "POST", body: jsonBody({ reason, steps }) })); }
     catch (error) { return failure(error); }
   });
+
+  server.registerTool("chusky_mission_evidence", {
+    title: "Attach mission evidence",
+    description: "Attach bounded source, receipt, artifact, assertion, before/after, or human-confirmation evidence to an owned mission or step.",
+    inputSchema: { missionId: z.string().min(1).max(200), stepId: z.string().max(160).optional(), evidence: z.array(z.object({ id: z.string().max(200).optional(), kind: z.enum(["source", "tool_receipt", "artifact", "assertion", "before_after", "human_confirmation"]), summary: z.string().min(1).max(2000), source: z.string().max(500).optional(), ref: z.string().max(500).optional(), hash: z.string().max(128).optional(), verified: z.boolean(), verifiedBy: z.enum(["agent", "system", "human"]).optional() })).min(1).max(20) },
+  }, async ({ missionId, stepId, evidence }) => {
+    try { scope(identity, "mcp:run"); return result(await chusky(env, identity, `/v1/missions/${encodeURIComponent(missionId)}/evidence`, { method: "POST", body: jsonBody({ stepId, evidence }) })); }
+    catch (error) { return failure(error); }
+  });
+
+  server.registerTool("chusky_mission_verify", {
+    title: "Verify a mission outcome",
+    description: "Verify completed steps and required evidence before an external agent claims the mission is done.",
+    inputSchema: { missionId: z.string().min(1).max(200), evidenceIds: z.array(z.string().max(200)).max(50).optional(), confidence: z.number().min(0).max(1).optional(), verifiedBy: z.enum(["agent", "system", "human"]).optional() },
+  }, async ({ missionId, evidenceIds, confidence, verifiedBy }) => {
+    try { scope(identity, "mcp:run"); return result(await chusky(env, identity, `/v1/missions/${encodeURIComponent(missionId)}/verify`, { method: "POST", body: jsonBody({ evidenceIds, confidence, verifiedBy }) })); }
+    catch (error) { return failure(error); }
+  });
+
+  server.registerTool("chusky_mission_repair", {
+    title: "Repair a mission",
+    description: "Put an owned mission into an honest repair state after a failed assertion, inconsistent result, or provider error while preserving completed work.",
+    inputSchema: { missionId: z.string().min(1).max(200), reason: z.string().min(1).max(2000), nextAction: z.string().max(2000).optional() },
+  }, async ({ missionId, reason, nextAction }) => {
+    try { scope(identity, "mcp:run"); return result(await chusky(env, identity, `/v1/missions/${encodeURIComponent(missionId)}/repair`, { method: "POST", body: jsonBody({ reason, nextAction }) })); }
+    catch (error) { return failure(error); }
+  });
+
+  server.registerTool("chusky_outcomes_list", {
+    title: "List Chusky outcome packages",
+    description: "List department-specific outcome packages with required inputs, success criteria, evidence, approval policy, and deliverables.",
+    inputSchema: {},
+  }, async () => { try { scope(identity, "mcp:read"); return result(await chusky(env, identity, "/v1/outcomes")); } catch (error) { return failure(error); } });
+
+  server.registerTool("chusky_outcome_plan", {
+    title: "Plan a Chusky outcome",
+    description: "Create a no-side-effect typed plan for a named outcome package and identify missing inputs before work begins.",
+    inputSchema: { slug: z.string().min(1).max(120), input: z.record(z.string(), z.unknown()) },
+  }, async ({ slug, input }) => { try { scope(identity, "mcp:read"); return result(await chusky(env, identity, `/v1/outcomes/${encodeURIComponent(slug)}/plan`, { method: "POST", body: jsonBody(input) })); } catch (error) { return failure(error); } });
+
+  server.registerTool("chusky_context_search", {
+    title: "Search Chusky context graph",
+    description: "Select owner-scoped context by purpose and scope instead of dumping all memory into an agent prompt.",
+    inputSchema: { query: z.string().max(500).optional(), scope: z.enum(["user", "organization", "department", "project", "mission", "meeting", "conversation", "channel"]).optional(), scopeId: z.string().max(180).optional(), purpose: z.enum(["planning", "execution", "meeting", "support", "sales", "reporting", "handoff"]).optional(), limit: z.number().int().min(1).max(100).optional() },
+  }, async ({ query, scope: contextScope, scopeId, purpose, limit }) => { try { scope(identity, "mcp:read"); const params = new URLSearchParams(); if (query) params.set("query", query); if (contextScope) params.set("scope", contextScope); if (scopeId) params.set("scopeId", scopeId); if (purpose) params.set("purpose", purpose); if (limit) params.set("limit", String(limit)); return result(await chusky(env, identity, `/v1/context?${params}`)); } catch (error) { return failure(error); } });
+
+  server.registerTool("chusky_context_save", {
+    title: "Save Chusky context",
+    description: "Save a durable, owner-scoped decision, objective, preference, open loop, receipt, artifact, or fact with sensitivity and source metadata.",
+    inputSchema: { scope: z.enum(["user", "organization", "department", "project", "mission", "meeting", "conversation", "channel"]), scopeId: z.string().max(180).optional(), kind: z.enum(["memory", "decision", "preference", "objective", "open_loop", "tool_receipt", "artifact", "meeting", "message", "fact", "relationship"]), key: z.string().min(1).max(240), value: z.string().min(1).max(20_000), sensitivity: z.enum(["normal", "sensitive"]), source: z.string().max(500).optional(), sourceRef: z.string().max(500).optional(), confidence: z.number().min(0).max(1).optional(), tags: z.array(z.string().max(80)).max(20).optional(), reviewAt: z.number().optional(), expiresAt: z.number().optional() },
+  }, async (input) => { try { scope(identity, "mcp:run"); return result(await chusky(env, identity, "/v1/context", { method: "POST", body: jsonBody(input) })); } catch (error) { return failure(error); } });
 
   server.registerTool("chusky_usage_get", {
     title: "Get Chusky usage",

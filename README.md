@@ -14,6 +14,8 @@ Version `0.3.0` supports two authentication modes:
 - Start durable, policy-governed runs; inspect status, events, and run history; cancel or resume runs.
 - Check approval status without approving; list, inspect, cancel, and retry durable tasks.
 - Start bounded autonomous missions that continue across slices and restarts; inspect checkpoints and budgets; pause, resume, or cancel them.
+- Inspect mission event history, attach evidence, verify outcomes, repair failed work, and plan department-specific outcome packages.
+- Search and save purpose-scoped context, including decisions, open loops, tool receipts, artifacts, meetings, and department handoffs.
 - Read per-identity usage and company-project run, audit, and monthly usage summaries.
 - Discover Chusky tools and trusted skills, revisit threads, inspect approvals, and retrieve artifact/file metadata.
 - Manage agent profiles, triggers, and webhook targets when the caller has the `mcp:manage` scope.
@@ -130,6 +132,8 @@ public names and their minimum MCP scope:
 | Runs | `chusky_run_start`, `chusky_run_get`, `chusky_runs_list`, `chusky_run_events`, `chusky_run_cancel`, `chusky_run_resume` |
 | Tasks | `chusky_tasks_list`, `chusky_task_get`, `chusky_task_cancel`, `chusky_task_retry` |
 | Autonomous missions | `chusky_missions_list`, `chusky_mission_get`, `chusky_mission_start`, `chusky_mission_step_complete`, `chusky_mission_replan`, `chusky_mission_event`, `chusky_mission_pause`, `chusky_mission_resume`, `chusky_mission_cancel` |
+| Mission proof and outcomes | `chusky_mission_events`, `chusky_mission_proof`, `chusky_mission_evidence`, `chusky_mission_verify`, `chusky_mission_repair`, `chusky_outcomes_list`, `chusky_outcome_plan` |
+| Context graph | `chusky_context_search`, `chusky_context_save` |
 | Threads | `chusky_threads_list`, `chusky_thread_get`, `chusky_thread_update` |
 | Approvals | `chusky_approval_status`, `chusky_approvals_list` |
 | Files and artifacts | `chusky_file_get`, `chusky_artifacts_list`, `chusky_artifact_get` |
@@ -138,10 +142,22 @@ public names and their minimum MCP scope:
 | Usage | `chusky_usage_get`, `chusky_company_runs_list`, `chusky_company_audit_list`, `chusky_company_usage_get` |
 
 Read/list/get tools require `mcp:read`; run start/cancel/resume and task
-cancel/retry require `mcp:run`; profile, connection, trigger, thread, and
+cancel/retry, mission evidence/verification/repair, and context writes require `mcp:run`; profile, connection, trigger, thread, and
 webhook mutations require `mcp:manage`; company aggregates require
 `mcp:company`. A stronger scope includes the weaker read scopes, but the
 underlying Chusky project key scopes are still checked by the API.
+
+The server also publishes two owner-scoped MCP resources for clients that
+prefer resource reads during planning:
+
+```text
+chusky://outcomes/catalog
+chusky://missions/overview
+```
+
+Resources require `mcp:read` and resolve through the same authenticated Chusky
+API as the tools. They never expose another identity's missions, context, or
+connected accounts.
 
 The most important input contracts are:
 
@@ -166,6 +182,25 @@ The most important input contracts are:
     "missionId": "string",
     "provider": "string",
     "providerEventId": "stable provider event id"
+  },
+  "chusky_mission_evidence": {
+    "missionId": "string",
+    "stepId": "optional string",
+    "evidence": "bounded array of source, receipt, artifact, assertion, before/after, or human-confirmation records"
+  },
+  "chusky_mission_verify": {
+    "missionId": "string",
+    "evidenceIds": "optional array",
+    "confidence": "optional number from 0 to 1"
+  },
+  "chusky_outcome_plan": {
+    "slug": "qualified-fintech-leads | support-case-resolution | competitor-change-report | employee-onboarding | finance-exception-reconciliation | executive-weekly-review | production-incident-repair",
+    "input": "object of business inputs"
+  },
+  "chusky_context_search": {
+    "purpose": "planning | execution | meeting | support | sales | reporting | handoff",
+    "scope": "user | organization | department | project | mission | meeting | conversation | channel",
+    "query": "optional text query"
   },
   "chusky_skill_read": { "name": "string", "path": "optional skill-relative path" },
   "chusky_composio_connect_app": { "toolkit": "string", "alias": "optional string" },
