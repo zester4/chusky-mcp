@@ -317,6 +317,46 @@ function createServer(env: Env, identity: McpIdentity): McpServer {
     } catch (error) { return failure(error); }
   });
 
+  server.registerTool("chusky_autonomy_status", {
+    title: "Read Chusky autonomy queue",
+    description: "Read the owner-scoped personal or business autonomy profile, active watches, unfinished work, blockers, and next checks. This is read-only and does not execute provider actions.",
+    inputSchema: { mode: z.enum(["personal", "business"]).optional() },
+  }, async ({ mode }) => {
+    try { scope(identity, "mcp:read"); return result(await chusky(env, identity, `/v1/account/autonomy/queue?mode=${mode === "business" ? "business" : "personal"}`)); }
+    catch (error) { return failure(error); }
+  });
+
+  server.registerTool("chusky_autonomy_reconcile", {
+    title: "Run Chusky autonomy reconciliation",
+    description: "Run bounded due read-only autonomy watches, persist checkpoints, and return verified gap candidates. It never sends, edits, deletes, spends, schedules, invites, or changes permissions.",
+    inputSchema: { mode: z.enum(["personal", "business"]).optional(), maxWatches: z.number().int().min(1).max(20).optional(), idempotencyKey: z.string().min(8).max(200) },
+  }, async ({ mode, maxWatches, idempotencyKey }) => {
+    try {
+      scope(identity, "mcp:run");
+      return result(await chusky(env, identity, "/v1/account/autonomy/reconcile", { method: "POST", headers: { "Idempotency-Key": key(idempotencyKey, "autonomy") }, body: jsonBody({ mode: mode === "business" ? "business" : "personal", ...(maxWatches === undefined ? {} : { maxWatches }) }) }));
+    } catch (error) { return failure(error); }
+  });
+
+  server.registerTool("chusky_company_autonomy_status", {
+    title: "Read company autonomy queue",
+    description: "Read a company project's policy-scoped autonomy queue, active watches, blockers, and next checks.",
+    inputSchema: { projectId: z.string().min(1).max(160) },
+  }, async ({ projectId }) => {
+    try { scope(identity, "mcp:company"); return result(await chusky(env, identity, `/v1/account/projects/${encodeURIComponent(projectId)}/autonomy/queue`)); }
+    catch (error) { return failure(error); }
+  });
+
+  server.registerTool("chusky_company_autonomy_reconcile", {
+    title: "Run company autonomy reconciliation",
+    description: "Run bounded, read-only autonomy watches under a company project's policy and return verified gaps. External writes remain approval-gated.",
+    inputSchema: { projectId: z.string().min(1).max(160), maxWatches: z.number().int().min(1).max(20).optional(), idempotencyKey: z.string().min(8).max(200) },
+  }, async ({ projectId, maxWatches, idempotencyKey }) => {
+    try {
+      scope(identity, "mcp:company");
+      return result(await chusky(env, identity, `/v1/account/projects/${encodeURIComponent(projectId)}/autonomy/reconcile`, { method: "POST", headers: { "Idempotency-Key": key(idempotencyKey, "company-autonomy") }, body: jsonBody({ ...(maxWatches === undefined ? {} : { maxWatches }) }) }));
+    } catch (error) { return failure(error); }
+  });
+
   server.registerTool("chusky_triggers_list", {
     title: "List Composio triggers",
     description: "List existing event triggers attached to this Chusky user identity.",

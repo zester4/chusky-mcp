@@ -140,6 +140,7 @@ public names and their minimum MCP scope:
 | Triggers | `chusky_trigger_create`, `chusky_trigger_update`, `chusky_trigger_delete` |
 | Webhooks | `chusky_webhooks_list`, `chusky_webhook_create`, `chusky_webhook_update`, `chusky_webhook_delete`, `chusky_webhook_deliveries_list`, `chusky_webhook_delivery_retry` |
 | Usage | `chusky_usage_get`, `chusky_company_runs_list`, `chusky_company_audit_list`, `chusky_company_usage_get` |
+| Autonomy | `chusky_autonomy_status`, `chusky_autonomy_reconcile`, `chusky_company_autonomy_status`, `chusky_company_autonomy_reconcile` |
 
 Read/list/get tools require `mcp:read`; run start/cancel/resume and task
 cancel/retry, mission evidence/verification/repair, and context writes require `mcp:run`; profile, connection, trigger, thread, and

@@ -18,7 +18,7 @@ test("MCP public contract keeps OAuth, identity, limits, and curated tools wired
   assert.doesNotMatch(source, /chusky_approval_(approve|deny)/);
 
   const registeredTools = [...source.matchAll(/registerTool\("([^"]+)"/g)].map((match) => match[1]);
-  assert.equal(registeredTools.length, 58, "the public catalog should remain intentionally curated");
+  assert.equal(registeredTools.length, 62, "the public catalog should remain intentionally curated");
   for (const toolName of registeredTools) {
     assert.match(readme, new RegExp(`\\b${toolName}\\b`), `README is missing ${toolName}`);
   }
