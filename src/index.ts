@@ -121,7 +121,7 @@ const oauthCss = `
   .page { width: min(1040px, calc(100% - 32px)); margin: 0 auto; padding: 28px 0 48px; }
   .topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 28px; }
   .brand { display: inline-flex; align-items: center; gap: 10px; color: var(--foreground); font-family: var(--font-display); font-size: 22px; font-weight: 600; letter-spacing: -.04em; }
-  .brand-mark { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; background: var(--foreground); color: var(--background); font-family: var(--font-display); font-size: 16px; font-weight: 600; letter-spacing: -.05em; }
+  .brand-logo { display: block; width: 30px; height: 30px; border-radius: 9px; object-fit: cover; }
   .trust-label { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: .03em; }
   .trust-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 0 3px color-mix(in srgb, var(--amber) 18%, transparent); }
   .card { display: grid; grid-template-columns: minmax(0, .88fr) minmax(0, 1.12fr); overflow: hidden; border: 1px solid var(--border); border-radius: 20px; background: var(--card); box-shadow: 0 24px 70px rgba(31, 28, 22, .09), 0 3px 12px rgba(31, 28, 22, .04); }
@@ -174,13 +174,13 @@ const oauthCss = `
 
 const oauthHeaders = {
   "Content-Type": "text/html; charset=utf-8",
-  "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'",
+  "Content-Security-Policy": "default-src 'none'; img-src https://chusky-web.vercel.app; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'",
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "no-referrer",
 };
 
 function oauthShell(content: string, title: string): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><style>${oauthCss}</style></head><body><div class="page"><header class="topbar"><div class="brand"><span class="brand-mark" aria-hidden="true">C</span><span>Chusky</span></div><div class="trust-label"><span class="trust-dot" aria-hidden="true"></span>Secure connection</div></header>${content}</div></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><style>${oauthCss}</style></head><body><div class="page"><header class="topbar"><div class="brand"><img class="brand-logo" src="${escapeHtml(MCP_ICON_URL)}" alt=""><span>Chusky</span></div><div class="trust-label"><span class="trust-dot" aria-hidden="true"></span>Secure connection</div></header>${content}</div></body></html>`;
 }
 
 function oauthErrorResponse(message: string, status = 400): Response {
