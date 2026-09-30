@@ -14,6 +14,8 @@ test("MCP keeps the approval boundary and response limits explicit", async () =>
   assert.match(source, /http-equiv="refresh"/);
   assert.doesNotMatch(source, /approvals\/[^"`]*\/(approve|deny)/);
   assert.match(source, /server\.registerTool\("chusky_tool_run"/);
+  assert.match(source, /server\.registerTool\("chusky_tool_schema_get"/);
+  assert.match(source, /server\.registerTool\("chusky_native_tool_run"/);
   assert.match(source, /title:\s*["']Chusky["']/);
   assert.match(source, /const MCP_WEBSITE_URL = ["']https:\/\/chusky-web\.vercel\.app["']/);
   assert.match(source, /websiteUrl:\s*MCP_WEBSITE_URL/);
@@ -26,4 +28,8 @@ test("MCP keeps the approval boundary and response limits explicit", async () =>
   assert.match(source, /tools:\s*\{\s*allow:\s*\[tool\]/);
   assert.match(source, /budget:\s*\{\s*maxToolCalls:\s*1\s*\}/);
   assert.match(source, /If the tool requires human approval, pause/);
+  assert.match(source, /NATIVE_TOOL_NAME = \/\^CHUCK_\[A-Z0-9_\]\+\$\//);
+  assert.match(source, /\/v1\/tools\/\$\{encodeURIComponent\(toolName\)\}/);
+  assert.match(source, /descriptor\.source !== "native"/);
+  assert.match(source, /tools: \{ allow: \[toolName\] \}/);
 });

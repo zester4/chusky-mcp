@@ -208,7 +208,8 @@ These are the main groups, shown by the job they help accomplish:
 | Connect and inspect business apps | `chusky_composio_apps_list`, `chusky_composio_connect_app`, `chusky_tools_list` |
 | Understand autonomy and available building blocks | `chusky_autonomy_status`, `chusky_autonomy_reconcile`, `chusky_company_autonomy_status`, `chusky_company_autonomy_reconcile`, `chusky_triggers_list`, `chusky_skills_search`, `chusky_skill_read` |
 | Start and monitor work | `chusky_run_start`, `chusky_run_get`, `chusky_run_events`, `chusky_runs_list` |
-| Run a specific tool or recover work | `chusky_tool_run`, `chusky_run_resume`, `chusky_run_cancel`, `chusky_approval_status`, `chusky_tasks_list`, `chusky_task_get`, `chusky_task_retry`, `chusky_task_cancel` |
+| Discover and run native capabilities | `chusky_tools_list`, `chusky_tool_schema_get`, `chusky_native_tool_run` |
+| Run a specific reliability capability or recover work | `chusky_tool_run`, `chusky_run_resume`, `chusky_run_cancel`, `chusky_approval_status`, `chusky_tasks_list`, `chusky_task_get`, `chusky_task_retry`, `chusky_task_cancel` |
 | Run a long-lived process | `chusky_missions_list`, `chusky_mission_start`, `chusky_mission_get`, `chusky_mission_events`, `chusky_mission_event`, `chusky_mission_step_complete`, `chusky_mission_replan` |
 | Prove or repair an outcome | `chusky_mission_evidence`, `chusky_mission_verify`, `chusky_mission_repair`, `chusky_mission_proof`, `chusky_outcomes_list`, `chusky_outcome_plan` |
 | Reuse knowledge and files | `chusky_context_search`, `chusky_context_save`, `chusky_artifacts_list`, `chusky_artifact_get`, `chusky_file_get` |
@@ -222,7 +223,15 @@ client can record progress without inventing a second workflow protocol.
 
 Tool names and schemas can grow over time. Treat the live `tools/list`
 response and each tool's input schema as authoritative instead of copying a
-static catalog into your application.
+static catalog into your application. `chusky_tools_list` returns the current
+native catalog and matching connected-app tools. For one exact native
+capability, call `chusky_tool_schema_get` with its `CHUCK_*` name, then pass
+that name and validated arguments to `chusky_native_tool_run`. The runner
+checks the live schema and starts a one-tool durable run, so new native
+capabilities become available through MCP without a second hard-coded catalog.
+Identity isolation, agent policy, budgets, and human approval remain enforced
+by Chusky. A native tool that needs a file or image must receive an owner-scoped
+file ID in `attachments`, obtained through the authenticated `/v1/files` API.
 
 Two read-only resources are also available:
 
