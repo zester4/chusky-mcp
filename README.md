@@ -93,18 +93,6 @@ For general MCP clients, paste the `/mcp` URL and let the client follow OAuth di
 
 The `/health` endpoint is a liveness check only and discloses no configuration. `/mcp` accepts Streamable HTTP MCP in both the current modern wire mode and the stateless 2025-era compatibility mode. The Worker bounds upstream calls to 25 seconds, returns structured MCP content with readable text fallback, annotates tools as read-only/destructive/idempotent where applicable, and reports protocol errors without logging credentials or tool arguments.
 
-## Branding
-
-The server advertises Chusky's logo through MCP server metadata. MCP clients
-that support server icons can display it automatically:
-
-```text
-https://chusky-web.vercel.app/brand/chusky-logo.png
-```
-
-The transparent PNG is also kept in this repository at `brand/chusky-logo.png`
-so the source asset travels with the MCP server release.
-
 ## Exact OAuth discovery endpoints
 
 OAuth-capable MCP clients should start with the `/mcp` URL and follow the
