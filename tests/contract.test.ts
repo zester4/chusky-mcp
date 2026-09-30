@@ -13,4 +13,8 @@ test("MCP keeps the approval boundary and response limits explicit", async () =>
   assert.match(source, /oauthCompletionResponse/);
   assert.match(source, /http-equiv="refresh"/);
   assert.doesNotMatch(source, /approvals\/[^"`]*\/(approve|deny)/);
+  assert.match(source, /title:\s*["']Chusky["']/);
+  assert.match(source, /const MCP_WEBSITE_URL = ["']https:\/\/chusky-web\.vercel\.app["']/);
+  assert.match(source, /websiteUrl:\s*MCP_WEBSITE_URL/);
+  assert.match(source, /icons:\s*\[\{\s*src:\s*MCP_ICON_URL,\s*mimeType:\s*["']image\/png["']/);
 });

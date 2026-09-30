@@ -13,7 +13,9 @@ type OAuthProps = { apiKey: string; userId: string; scopes: string[] };
 
 const OAUTH_SCOPES = ["mcp:read", "mcp:run", "mcp:manage", "mcp:company"] as const;
 const MCP_MAX_UPSTREAM_MS = 25_000;
-const MCP_VERSION = "0.3.0";
+const MCP_VERSION = "0.3.1";
+const MCP_WEBSITE_URL = "https://chusky-web.vercel.app";
+const MCP_ICON_URL = `${MCP_WEBSITE_URL}/brand/chusky-logo.png`;
 
 function apiError(status: number, code?: string): ApiFailure {
   const known = code && /^[a-z0-9_]{1,80}$/i.test(code) ? code : "request_failed";
@@ -238,7 +240,13 @@ async function authorize(request: Request, env: Env): Promise<Response> {
 }
 
 function createServer(env: Env, identity: McpIdentity): McpServer {
-  const server = new McpServer({ name: "chusky", version: MCP_VERSION });
+  const server = new McpServer({
+    name: "chusky",
+    title: "Chusky",
+    version: MCP_VERSION,
+    websiteUrl: MCP_WEBSITE_URL,
+    icons: [{ src: MCP_ICON_URL, mimeType: "image/png", sizes: ["1254x1254"] }],
+  });
   const writeTools = new Set([
     "chusky_composio_connect_app", "chusky_agent_create", "chusky_agent_update", "chusky_agent_delete", "chusky_run_start", "chusky_run_cancel",
     "chusky_run_resume", "chusky_task_cancel", "chusky_task_retry", "chusky_mission_start", "chusky_mission_pause", "chusky_mission_resume", "chusky_mission_cancel", "chusky_mission_event", "chusky_mission_step_complete", "chusky_mission_replan", "chusky_thread_update", "chusky_trigger_create",
