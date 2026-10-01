@@ -1,5 +1,5 @@
 import { createMcpHandler } from "agents/mcp/server";
-import { McpServer } from "@modelcontextprotocol/server";
+import { McpServer, ResourceTemplate } from "@modelcontextprotocol/server";
 import { OAuthProvider, type AuthRequest, type OAuthHelpers } from "@cloudflare/workers-oauth-provider";
 import { z } from "zod";
 import { allowedApiPath, configuredApiOrigin, requestIdentity, requireMcpScope, type McpIdentity } from "./security.js";
@@ -13,9 +13,12 @@ type OAuthProps = { apiKey: string; userId: string; scopes: string[] };
 
 const OAUTH_SCOPES = ["mcp:read", "mcp:run", "mcp:manage", "mcp:company"] as const;
 const MCP_MAX_UPSTREAM_MS = 25_000;
-const MCP_VERSION = "0.5.0";
+const MCP_VERSION = "0.6.0";
 const MCP_WEBSITE_URL = "https://chusky-web.vercel.app";
 const MCP_ICON_URL = `${MCP_WEBSITE_URL}/brand/chusky-logo.png`;
+const MCP_ICON = { src: MCP_ICON_URL, mimeType: "image/png", sizes: ["1254x1254"] };
+const MCP_MAX_ARTIFACT_BYTES = 8_000_000;
+const MCP_MAX_INLINE_TEXT_BYTES = 600_000;
 const NATIVE_TOOL_NAME = /^CHUCK_[A-Z0-9_]+$/;
 
 type NativeToolDescriptor = {
@@ -68,16 +71,120 @@ async function chusky<T>(env: Env, identity: McpIdentity, path: string, init: Re
   return data as T;
 }
 
-function result(value: unknown) {
+type ResourceLinkContent = { type: "resource_link"; uri: string; name: string; title?: string; description?: string; mimeType?: string; size?: number };
+type ReadResourceContent =
+  | { uri: string; mimeType?: string; text: string }
+  | { uri: string; mimeType?: string; blob: string };
+type EmbeddedResourceContent = { type: "resource"; resource: ReadResourceContent };
+
+function artifactResourceUri(kind: "artifacts" | "files", id: string): string {
+  return `chusky://${kind}/${encodeURIComponent(id)}`;
+}
+
+function resourceLink(kind: "artifacts" | "files", value: Record<string, unknown>): ResourceLinkContent {
+  const id = typeof value.id === "string" ? value.id : "";
+  const name = typeof value.name === "string" ? value.name : "Chusky file";
+  const contentType = typeof value.contentType === "string" ? value.contentType : "application/octet-stream";
+  const size = typeof value.size === "number" && Number.isSafeInteger(value.size) ? value.size : undefined;
+  return { type: "resource_link", uri: artifactResourceUri(kind, id), name, title: name, description: "Owner-scoped Chusky artifact content. The host may read this resource for preview or download.", mimeType: contentType, ...(size === undefined ? {} : { size }) };
+}
+
+function base64(bytes: Uint8Array): string {
+  let output = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    output += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + chunkSize, bytes.length)));
+  }
+  return btoa(output);
+}
+
+function textMimeType(contentType: string): boolean {
+  return contentType.startsWith("text/") || ["application/json", "application/ld+json", "application/xml", "application/javascript", "application/x-ndjson", "application/yaml", "application/x-yaml"].includes(contentType);
+}
+
+async function fetchBinary(url: URL, init: RequestInit = {}): Promise<{ bytes: Uint8Array; contentType: string }> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort("Chusky artifact request timed out"), MCP_MAX_UPSTREAM_MS);
+  try {
+    const response = await fetch(url, { ...init, redirect: "manual", signal: controller.signal });
+    const contentLength = Number(response.headers.get("content-length") ?? "");
+    if (Number.isFinite(contentLength) && contentLength > MCP_MAX_ARTIFACT_BYTES) throw new Error("This artifact is too large for inline MCP transfer.");
+
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error("The artifact response did not include a readable body.");
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    while (true) {
+      const next = await reader.read();
+      if (next.done) break;
+      total += next.value.byteLength;
+      if (total > MCP_MAX_ARTIFACT_BYTES) {
+        await reader.cancel("Artifact exceeds MCP transfer limit");
+        throw new Error("This artifact is too large for inline MCP transfer.");
+      }
+      chunks.push(next.value);
+    }
+    const bytes = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+
+    if (!response.ok) {
+      let code: string | undefined;
+      try { const body = JSON.parse(new TextDecoder().decode(bytes)) as { error?: { code?: unknown } }; code = typeof body.error?.code === "string" ? body.error.code : undefined; } catch { /* use the bounded status error */ }
+      throw apiError(response.status, code);
+    }
+    return { bytes, contentType: (response.headers.get("content-type") ?? "application/octet-stream").split(";", 1)[0]!.toLowerCase() };
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error("Chusky artifact request timed out.");
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function resourceContent(uri: string, bytes: Uint8Array, contentType: string): ReadResourceContent {
+  if (textMimeType(contentType) && bytes.byteLength <= MCP_MAX_INLINE_TEXT_BYTES) {
+    return { uri, mimeType: contentType, text: new TextDecoder().decode(bytes) };
+  }
+  return { uri, mimeType: contentType, blob: base64(bytes) };
+}
+
+async function readArtifactContent(env: Env, identity: McpIdentity, id: string, uri: string): Promise<ReadResourceContent> {
+  if (!/^[A-Za-z0-9._:-]{1,200}$/.test(id)) throw new Error("artifactId is invalid.");
+  const origin = configuredApiOrigin(env.CHUSKY_API_ORIGIN);
+  if (!origin) throw new Error("Chusky API origin is not configured as a trusted HTTPS origin.");
+  const path = `/v1/artifacts/${encodeURIComponent(id)}/download`;
+  if (!allowedApiPath(path)) throw new Error("Invalid internal Chusky artifact path.");
+  const headers = new Headers({ Authorization: `Bearer ${identity.apiKey}`, "X-Chusky-User-Id": identity.userId });
+  const downloaded = await fetchBinary(new URL(path, origin), { headers });
+  return resourceContent(uri, downloaded.bytes, downloaded.contentType);
+}
+
+async function readFileContent(env: Env, identity: McpIdentity, id: string, uri: string): Promise<ReadResourceContent> {
+  if (!/^[A-Za-z0-9._:-]{1,200}$/.test(id)) throw new Error("fileId is invalid.");
+  const file = await chusky<{ downloadUrl?: unknown; contentType?: unknown }>(env, identity, `/v1/files/${encodeURIComponent(id)}`);
+  if (typeof file.downloadUrl !== "string") throw new Error("The file has no available download URL.");
+  const signedUrl = new URL(file.downloadUrl);
+  if (signedUrl.protocol !== "https:") throw new Error("Chusky returned an invalid file URL.");
+  const downloaded = await fetchBinary(signedUrl);
+  const contentType = typeof file.contentType === "string" ? file.contentType.toLowerCase() : downloaded.contentType;
+  return resourceContent(uri, downloaded.bytes, contentType);
+}
+
+function embeddedResource(resource: ReadResourceContent): EmbeddedResourceContent {
+  return { type: "resource", resource };
+}
+
+function result(value: unknown, extraContent: Array<ResourceLinkContent | EmbeddedResourceContent> = []): any {
   const raw = JSON.stringify(value);
   const structuredContent = raw.length <= 24_000
     ? value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : { data: value }
     : { truncated: true, message: "Result exceeded the MCP response limit; request a narrower result." };
   const text = JSON.stringify(structuredContent);
-  return { structuredContent, content: [{ type: "text" as const, text }] };
+  return { structuredContent, content: [{ type: "text" as const, text }, ...extraContent] };
 }
 
-function failure(error: unknown) {
+function failure(error: unknown): any {
   const message = error instanceof Error ? error.message : "Chusky operation failed.";
   return { isError: true, content: [{ type: "text" as const, text: message.slice(0, 500) }] };
 }
@@ -294,7 +401,7 @@ function createServer(env: Env, identity: McpIdentity): McpServer {
     title: "Chusky",
     version: MCP_VERSION,
     websiteUrl: MCP_WEBSITE_URL,
-    icons: [{ src: MCP_ICON_URL, mimeType: "image/png", sizes: ["1254x1254"] }],
+    icons: [MCP_ICON],
   });
   const writeTools = new Set([
     "chusky_composio_connect_app", "chusky_agent_create", "chusky_agent_update", "chusky_agent_delete", "chusky_run_start", "chusky_tool_run", "chusky_native_tool_run", "chusky_run_cancel",
@@ -307,6 +414,7 @@ function createServer(env: Env, identity: McpIdentity): McpServer {
   (server as unknown as { registerTool: typeof server.registerTool }).registerTool = ((name: string, options: Record<string, unknown>, callback: (...args: any[]) => unknown) => registerTool(name, {
     ...options,
     outputSchema: options.outputSchema ?? z.record(z.string(), z.unknown()),
+    icons: options.icons ?? [MCP_ICON],
     annotations: writeTools.has(name)
       ? { readOnlyHint: false, destructiveHint: /cancel|delete|disconnect|revoke|monitor/.test(name), idempotentHint: /cancel|update|delete/.test(name), openWorldHint: true }
       : { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -318,6 +426,7 @@ function createServer(env: Env, identity: McpIdentity): McpServer {
     title: "Chusky outcome package catalog",
     description: "Department-specific, evidence-backed outcome packages with tools, budgets, approvals, and success criteria.",
     mimeType: "application/json",
+    icons: [MCP_ICON],
   }, async (uri) => {
     try { scope(identity, "mcp:read"); const data = await chusky(env, identity, "/v1/outcomes"); return { contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify(data) }] }; }
     catch (error) { throw error instanceof Error ? error : new Error("Outcome catalog unavailable."); }
@@ -326,9 +435,32 @@ function createServer(env: Env, identity: McpIdentity): McpServer {
     title: "Chusky mission overview",
     description: "Owner-scoped durable missions, status, checkpoints, next actions, budgets, and evidence state.",
     mimeType: "application/json",
+    icons: [MCP_ICON],
   }, async (uri) => {
     try { scope(identity, "mcp:read"); const data = await chusky(env, identity, "/v1/missions"); return { contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify(data) }] }; }
     catch (error) { throw error instanceof Error ? error : new Error("Mission overview unavailable."); }
+  });
+
+  server.registerResource("chusky_artifact_content", new ResourceTemplate("chusky://artifacts/{artifactId}", { list: undefined }), {
+    title: "Chusky artifact content",
+    description: "Owner-scoped generated artifact bytes or text, suitable for a host preview or download.",
+    icons: [MCP_ICON],
+  }, async (uri, variables) => {
+    try {
+      scope(identity, "mcp:read");
+      return { contents: [await readArtifactContent(env, identity, String(variables.artifactId ?? ""), uri.href)] };
+    } catch (error) { throw error instanceof Error ? error : new Error("Artifact content unavailable."); }
+  });
+
+  server.registerResource("chusky_file_content", new ResourceTemplate("chusky://files/{fileId}", { list: undefined }), {
+    title: "Chusky file content",
+    description: "Owner-scoped uploaded file bytes or text, suitable for a host preview or download.",
+    icons: [MCP_ICON],
+  }, async (uri, variables) => {
+    try {
+      scope(identity, "mcp:read");
+      return { contents: [await readFileContent(env, identity, String(variables.fileId ?? ""), uri.href)] };
+    } catch (error) { throw error instanceof Error ? error : new Error("File content unavailable."); }
   });
 
   server.registerTool("chusky_agent_templates", {
@@ -990,20 +1122,46 @@ function createServer(env: Env, identity: McpIdentity): McpServer {
 
   server.registerTool("chusky_artifact_get", {
     title: "Get a Chusky artifact",
-    description: "Read metadata for one generated artifact. Use the returned delivery information through the authenticated Chusky API.",
+    description: "Read metadata for one generated artifact and receive an owner-scoped MCP resource link for preview or download.",
     inputSchema: { artifactId: z.string().min(1).max(200) },
   }, async ({ artifactId }) => {
-    try { scope(identity, "mcp:read"); return result(await chusky(env, identity, `/v1/artifacts/${encodeURIComponent(artifactId)}`)); }
+    try { scope(identity, "mcp:read"); const artifact = await chusky<Record<string, unknown>>(env, identity, `/v1/artifacts/${encodeURIComponent(artifactId)}`); return result(artifact, [resourceLink("artifacts", artifact)]); }
     catch (error) { return failure(error); }
+  });
+
+  server.registerTool("chusky_artifact_read", {
+    title: "Read a Chusky artifact",
+    description: "Read owner-scoped artifact content through MCP. Text is returned as text; images and supported binary files are returned as embedded resources so the host can preview or offer them for download. Large artifacts fail with a bounded explanation instead of leaking a storage path.",
+    inputSchema: { artifactId: z.string().min(1).max(200) },
+  }, async ({ artifactId }) => {
+    try {
+      scope(identity, "mcp:read");
+      const artifact = await chusky<Record<string, unknown>>(env, identity, `/v1/artifacts/${encodeURIComponent(artifactId)}`);
+      const content = await readArtifactContent(env, identity, artifactId, artifactResourceUri("artifacts", artifactId));
+      return result(artifact, [resourceLink("artifacts", artifact), embeddedResource(content)]);
+    } catch (error) { return failure(error); }
   });
 
   server.registerTool("chusky_file_get", {
     title: "Get a Chusky file",
-    description: "Get metadata and a short-lived private download URL for a verified uploaded file.",
+    description: "Get metadata, a short-lived private download URL, and an owner-scoped MCP resource link for a verified uploaded file.",
     inputSchema: { fileId: z.string().min(1).max(200) },
   }, async ({ fileId }) => {
-    try { scope(identity, "mcp:read"); return result(await chusky(env, identity, `/v1/files/${encodeURIComponent(fileId)}`)); }
+    try { scope(identity, "mcp:read"); const file = await chusky<Record<string, unknown>>(env, identity, `/v1/files/${encodeURIComponent(fileId)}`); return result(file, [resourceLink("files", file)]); }
     catch (error) { return failure(error); }
+  });
+
+  server.registerTool("chusky_file_read", {
+    title: "Read a Chusky file",
+    description: "Read owner-scoped uploaded file content through MCP. Text is returned as text; images and supported document formats are returned as embedded resources so the host can preview or offer them for download.",
+    inputSchema: { fileId: z.string().min(1).max(200) },
+  }, async ({ fileId }) => {
+    try {
+      scope(identity, "mcp:read");
+      const file = await chusky<Record<string, unknown>>(env, identity, `/v1/files/${encodeURIComponent(fileId)}`);
+      const content = await readFileContent(env, identity, fileId, artifactResourceUri("files", fileId));
+      return result(file, [resourceLink("files", file), embeddedResource(content)]);
+    } catch (error) { return failure(error); }
   });
 
   server.registerTool("chusky_trigger_create", {

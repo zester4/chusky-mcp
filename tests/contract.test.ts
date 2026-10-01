@@ -19,7 +19,13 @@ test("MCP keeps the approval boundary and response limits explicit", async () =>
   assert.match(source, /title:\s*["']Chusky["']/);
   assert.match(source, /const MCP_WEBSITE_URL = ["']https:\/\/chusky-web\.vercel\.app["']/);
   assert.match(source, /websiteUrl:\s*MCP_WEBSITE_URL/);
-  assert.match(source, /icons:\s*\[\{\s*src:\s*MCP_ICON_URL,\s*mimeType:\s*["']image\/png["']/);
+  assert.match(source, /const MCP_ICON = \{ src: MCP_ICON_URL/);
+  assert.match(source, /icons: options\.icons \?\? \[MCP_ICON\]/);
+  assert.match(source, /new ResourceTemplate\("chusky:\/\/artifacts\/\{artifactId\}"/);
+  assert.match(source, /new ResourceTemplate\("chusky:\/\/files\/\{fileId\}"/);
+  assert.match(source, /type: "resource_link"/);
+  assert.match(source, /type: "resource"/);
+  assert.match(source, /MCP_MAX_ARTIFACT_BYTES/);
   assert.match(source, /img-src https:\/\/chusky-web\.vercel\.app/);
   assert.match(source, /class="brand-logo" src="\$\{escapeHtml\(MCP_ICON_URL\)\}/);
   assert.match(source, /CHUCK_TOOL_PREFLIGHT.*CHUCK_INTEGRATION_HEALTH.*CHUCK_ARTIFACT_QA.*CHUCK_FILE_BRIDGE.*CHUCK_MEDIA_BRIDGE.*CHUCK_TOOL_RECOVERY/s);
